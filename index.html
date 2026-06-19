@@ -126,6 +126,25 @@
     font-size: 12px; line-height: 1.5;
   }
   .model-hint.warning { border-left-color: #c41e3a; background: #fff4f4; color: #7b1a27; }
+  /* Poe Token 餘額小角落 */
+  .poe-token-widget {
+    position: fixed; bottom: 12px; right: 12px; z-index: 9999;
+    background: rgba(30, 60, 24, 0.92); color: #d7f5d0;
+    border: 1px solid #4ade80; border-radius: 10px;
+    padding: 8px 12px; font-family: "Consolas", monospace;
+    font-size: 11px; line-height: 1.4; box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    cursor: pointer; user-select: none; max-width: 260px;
+    backdrop-filter: blur(4px); transition: opacity 0.2s, transform 0.2s;
+  }
+  .poe-token-widget:hover { transform: translateY(-2px); }
+  .poe-token-widget .pt-title {
+    font-weight: 700; color: #4ade80; letter-spacing: 0.5px;
+    display: flex; align-items: center; gap: 6px; margin-bottom: 2px;
+  }
+  .poe-token-widget .pt-value { font-size: 13px; font-weight: 700; color: #fff; }
+  .poe-token-widget .pt-sub { color: #a7f3d0; font-size: 10px; }
+  .poe-token-widget .pt-error { color: #f48771; font-size: 10px; margin-top: 2px; }
+  .poe-token-widget.minimized .pt-body { display: none; }
   h3 { color: #2a5298; margin-bottom: 14px; font-size: 17px;
        border-bottom: 2px solid #2a5298; padding-bottom: 6px; }
   .meeting-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -163,7 +182,7 @@
       <div class="form-group">
         <label>選擇生成會議紀錄的 AI 模型</label>
         <select id="model">
-          <option value="Qwen3.7-Plus" selected>Qwen3.7-Plus</option>
+          <option value="gemini-3.1-pro" selected>gemini-3.1-pro（Google Gemini 3.1 Pro）</option>
         </select>
         <div id="modelHint" class="model-hint"></div>
       </div>
@@ -171,10 +190,10 @@
       <div class="form-group">
         <label>語音轉文字（Speech-to-Text）服務</label>
         <select id="sttProvider" onchange="updateSttUI()" style="display:none;">
-          <option value="qwen" selected>qwen3.5-omni-plus（語音轉文字）</option>
+          <option value="gemini" selected>gemini-3.1-pro（語音轉文字）</option>
         </select>
         <div class="model-hint">
-          💡 使用 <strong>qwen3.5-omni-plus</strong> 進行語音轉文字，透過 POE API 調用。支援廣東話及英語混合，如轉錄失敗請改用專用 Whisper API。
+          💡 使用 <strong>gemini-3.1-pro</strong> 進行語音轉文字，透過 POE API 調用。支援廣東話及英語混合。
         </div>
       </div>
 
@@ -191,7 +210,7 @@
       <div class="form-group hidden" id="sttModelGroup">
         <label id="sttModelLabel">STT 模型</label>
         <select id="sttModel">
-          <option value="qwen3.5-omni-plus" selected>qwen3.5-omni-plus</option>
+          <option value="gemini-3.1-pro" selected>gemini-3.1-pro</option>
         </select>
       </div>
 
@@ -315,6 +334,80 @@
   </div>
 </div>
 
+<!-- Poe Token 餘額小角落 -->
+<div class="poe-token-widget" id="poeTokenWidget" title="點擊重新查詢 Poe Token 餘額">
+  <div class="pt-title">⚡ POE TOKEN</div>
+  <div class="pt-body">
+    <div class="pt-value" id="poeTokenValue">查詢中...</div>
+    <div class="pt-sub" id="poeTokenSub">GET /usage/current_balance</div>
+    <div class="pt-error" id="poeTokenErr" style="display:none;"></div>
+  </div>
+</div>
+
+<script>
+// === Poe Token 餘額查詢 ===
+async function fetchPoeTokenBalance() {
+  const apiKey = (document.getElementById('apiKey').value || '').trim();
+  const valEl = document.getElementById('poeTokenValue');
+  const subEl = document.getElementById('poeTokenSub');
+  const errEl = document.getElementById('poeTokenErr');
+
+  if (!apiKey) {
+    valEl.textContent = '未設定 API Key';
+    subEl.textContent = '請先於左側填寫 Poe API Key';
+    errEl.style.display = 'none';
+    return;
+  }
+
+  valEl.textContent = '查詢中... points';
+  subEl.textContent = 'GET /usage/current_balance';
+  errEl.style.display = 'none';
+
+  try {
+    const resp = await fetch('https://api.poe.com/usage/current_balance', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + apiKey }
+    });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => '');
+      throw new Error('HTTP ' + resp.status + (txt ? ' - ' + txt.slice(0, 120) : ''));
+    }
+    const data = await resp.json();
+    let balance = null;
+    if (typeof data === 'object' && data !== null) {
+      const candidates = ['current_point_balance', 'current_balance', 'balance', 'remaining', 'tokens', 'credit', 'points'];
+      for (const k of candidates) {
+        if (k in data && typeof data[k] !== 'object') { balance = data[k]; break; }
+      }
+    } else if (typeof data === 'number') {
+      balance = data;
+    }
+    if (balance === null || balance === undefined) {
+      balance = '(未知欄位) ' + JSON.stringify(data).slice(0, 80);
+    }
+    let display, usdText = '';
+    if (typeof balance === 'number') {
+      display = balance.toLocaleString('en-US', {maximumFractionDigits: 2}) + ' pts';
+      const usd = balance * 30 / 1_000_000;
+      usdText = ' ≈ $' + usd.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    } else {
+      display = String(balance);
+    }
+    valEl.textContent = display + usdText;
+    const ts = new Date().toLocaleTimeString('zh-HK');
+    subEl.textContent = '更新：' + ts + ' · 1M pts = $30';
+  } catch (err) {
+    valEl.textContent = '查詢失敗';
+    errEl.style.display = 'block';
+    errEl.textContent = err.message;
+    subEl.textContent = '可點擊此卡片重試';
+  }
+}
+
+document.getElementById('poeTokenWidget').addEventListener('click', fetchPoeTokenBalance);
+window.addEventListener('load', () => setTimeout(fetchPoeTokenBalance, 600));
+</script>
+
 <script>
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -325,17 +418,17 @@ let meetingNameGlobal = '';
 let outputTranscriptChecked = false;
 
 const STT_CONFIGS = {
-  'qwen': {
+  'gemini': {
     endpoint: '',
     keyLabel: '',
-    model: 'qwen3.5-omni-plus',
+    model: 'gemini-3.1-pro',
     needsKey: false
   }
 };
 
 const MODEL_HINTS = {
-  'qwen3.7-plus': {
-    text: 'Qwen3.7-Plus：阿里 Qwen 系列模型，中文能力較強，透過 POE API 調用。如遇 429 錯誤請稍後重試。',
+  'gemini-3.1-pro': {
+    text: 'gemini-3.1-pro：Google Gemini 3.1 Pro，透過 POE API 調用。支援多模態輸入（文字、圖片、音訊），適合會議紀錄生成與語音轉文字。如遇 429 錯誤請稍後重試。',
     warning: false
   }
 };
@@ -360,9 +453,7 @@ document.getElementById('model').addEventListener('change', updateModelHint);
 updateModelHint();
 
 function updateSttUI() {
-  // STT 固定為 qwen3.5-omni-plus，所有欄位隱藏，直接使用 POE API
-  document.getElementById('sttEndpointGroup').classList.add('hidden');
-  document.getElementById('sttKeyGroup').classList.add('hidden');
+  // STT 模型欄位維持隱藏；端點與密鑰改為預設顯示，供使用者設定 Whisper 相容服務
   document.getElementById('sttModelGroup').classList.add('hidden');
 }
 
@@ -442,10 +533,11 @@ async function extractFileContent(file) {
 }
 
 // 語音轉文字（使用 qwen3.5-omni-plus 透過 POE 多模態）
+// 語音轉文字（使用 POE API + gemini-3.1-pro，透過 type: "file" 上傳音訊）
 async function transcribeAudio(file, sttConfig) {
   const apiBaseUrl = document.getElementById('apiBaseUrl').value.trim().replace(/\/+$/, '');
   const apiKey = document.getElementById('apiKey').value.trim();
-  const model = sttConfig.model || 'qwen3.5-omni-plus';
+  const model = sttConfig.model || 'gemini-3.1-pro';
 
   if (!apiKey) throw new Error('請輸入 POE API Key');
 
@@ -470,8 +562,7 @@ async function transcribeAudio(file, sttConfig) {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + apiKey,
-        'Content-Type': 'application/json',
-        'X-Title': 'WCBT AI Meeting Minutes Generator'
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model: model,
@@ -480,7 +571,13 @@ async function transcribeAudio(file, sttConfig) {
             role: 'user',
             content: [
               { type: 'text', text: systemPrompt },
-              { type: 'image_url', image_url: { url: dataUri } }
+              {
+                type: 'file',
+                file: {
+                  filename: file.name,
+                  file_data: dataUri
+                }
+              }
             ]
           }
         ]
@@ -521,8 +618,7 @@ async function correctTranscript(rawTranscript, apiBaseUrl, apiKey, model) {
     method: 'POST',
     headers: {
       'Authorization': 'Bearer ' + apiKey,
-      'Content-Type': 'application/json',
-      'X-Title': 'WCBT AI Meeting Minutes Generator'
+      'Content-Type': 'application/json'
     },
     body: JSON.stringify({
       model: model,
@@ -563,8 +659,7 @@ async function streamGenerateMinutes(prompt, apiBaseUrl, apiKey, model) {
     method: 'POST',
     headers: {
       'Authorization': 'Bearer ' + apiKey,
-      'Content-Type': 'application/json',
-      'X-Title': 'WCBT AI Meeting Minutes Generator'
+      'Content-Type': 'application/json'
     },
     body: JSON.stringify({
       model: model,
