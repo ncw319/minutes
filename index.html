@@ -189,34 +189,66 @@
 
       <div class="form-group">
         <label>語音轉文字（Speech-to-Text）服務</label>
-        <select id="sttProvider" onchange="updateSttUI()" style="display:none;">
-          <option value="gemini" selected>gemini-3.1-pro（語音轉文字）</option>
+        <select id="sttProvider" onchange="updateSttUI()">
+          <option value="poe-gemini-3-flash" selected>POE gemini-3-flash（雲端，快速轉錄）</option>
+          <option value="poe-gemini">POE gemini-3.1-pro（雲端，廣東話較準）</option>
+          <option value="poe-whisper">POE Whisper-V3-Large-T（雲端，轉錄專用）</option>
+          <option value="poe-cartesia">POE Cartesia-Ink-Whisper（雲端，粵語支援）</option>
         </select>
-        <div class="model-hint">
-          💡 使用 <strong>gemini-3.1-pro</strong> 進行語音轉文字，透過 POE API 調用。支援廣東話及英語混合。
+        <div class="model-hint" id="flashHint">
+          ⚡ 使用 POE <strong>gemini-3-flash</strong> 進行語音轉文字。Google 輕量級多模態模型，比 Pro <strong>速度快、成本低</strong>，同樣支援廣東話及英語混合。推薦日常使用。
+        </div>
+        <div class="model-hint" id="geminiHint" style="display:none;">
+          💡 使用 POE <strong>gemini-3.1-pro</strong> 進行語音轉文字。比 Flash 準確度稍高但較慢。
+        </div>
+        <div class="model-hint warning" id="sttHint" style="display:none;">
+          🎙️ 使用 POE <strong>Whisper-V3-Large-T</strong>。需要 POE 帳戶啟用 Audio API 權限。
+        </div>
+        <div class="model-hint" id="cartesiaHint" style="display:none;">
+          🎙️ 使用 POE <strong>Cartesia-Ink-Whisper</strong>。專為即時對話優化，支援粵語(yue)。目前 API 調用方式不支援。
         </div>
       </div>
 
-      <div class="form-group hidden" id="sttEndpointGroup">
-        <label>STT API Endpoint</label>
-        <input type="text" id="sttEndpoint" value="" placeholder="輸入 STT API Endpoint">
-      </div>
+      <!-- 兩步流程：第一步 - 逐字稿編輯區 -->
+      <div id="step2Section" style="display:none;">
+        <h3>📝 步驟 2：逐字稿確認與編輯</h3>
+        <div class="model-hint">
+          ✅ AI 已綜合所有文件生成逐字紀錄。請檢查並編輯以下內容，確認無誤後再生成正式會議紀錄。
+        </div>
 
-      <div class="form-group hidden" id="sttKeyGroup">
-        <label id="sttKeyLabel">STT API Key</label>
-        <input type="password" id="sttApiKey" placeholder="輸入對應服務的 API Key" autocomplete="off">
-      </div>
+        <div class="form-group">
+          <label>會議名稱</label>
+          <input type="text" id="editMeetingName">
+        </div>
 
-      <div class="form-group hidden" id="sttModelGroup">
-        <label id="sttModelLabel">STT 模型</label>
-        <select id="sttModel">
-          <option value="gemini-3.1-pro" selected>gemini-3.1-pro</option>
-        </select>
-      </div>
+        <div class="meeting-info-grid">
+          <div class="form-group">
+            <label>會議日期及時間</label>
+            <input type="datetime-local" id="editMeetingDatetime">
+          </div>
+          <div class="form-group">
+            <label>主席</label>
+            <input type="text" id="editMeetingChair">
+          </div>
+        </div>
 
-      <p class="model-hint warning" id="audioFormatHint" style="display:none;">
-        ⚠️ 請注意：AAC 純音訊檔可能不被部分 STT 服務直接支援。如遇錯誤，請將錄音轉存為 MP3 或 M4A 後再上傳。
-      </p>
+        <div class="form-group">
+          <label>地點 / 線上平台</label>
+          <input type="text" id="editMeetingLocation">
+        </div>
+
+        <div class="form-group">
+          <label>出席者 / 列席者</label>
+          <textarea id="editMeetingAttendees" placeholder="例：全體教職員、陳老師（學生輔導主任）列席"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>逐字稿 / 會議內容（可編輯）<span id="transcriptCharCount" style="color:#999;font-size:12px;margin-left:8px;"></span></label>
+          <textarea id="editTranscript" style="min-height: 200px;" placeholder="AI 綜合所有資料後的逐字紀錄將顯示於此，請檢查並編輯..."></textarea>
+        </div>
+
+        <button class="btn btn-secondary" id="generateMinutesBtn" onclick="generateStep2()">📝 生成正式會議紀錄</button>
+      </div>
 
       <h3>📝 會議資料</h3>
       <div class="meeting-info-grid">
@@ -308,7 +340,16 @@
         </div>
       </div>
 
-      <button class="btn" id="generateBtn" onclick="generateMinutes()">🚀 開始生成會議紀錄</button>
+      <!-- 步驟指示器 -->
+      <div id="stepIndicator" style="display:none; margin-bottom:18px;">
+        <div style="display:flex; gap:8px; align-items:center; font-size:13px; font-weight:600;">
+          <span id="step1Badge" style="background:#2a5298; color:#fff; padding:4px 12px; border-radius:999px;">步驟 1</span>
+          <span style="color:#999;">→</span>
+          <span id="step2Badge" style="background:#ddd; color:#666; padding:4px 12px; border-radius:999px;">步驟 2</span>
+        </div>
+      </div>
+
+      <button class="btn" id="generateBtn" onclick="generateStep1()">📋 生成逐字稿與會議資訊</button>
     </div>
 
     <!-- 右面板：進度與預覽 -->
@@ -318,7 +359,7 @@
         <div class="progress-bar-fill" id="progressBar"></div>
       </div>
       <div class="progress-area" id="progressArea">
-        <div class="info">[系統就緒] 請填寫左側資料並點擊「開始生成會議紀錄」...</div>
+        <div class="info">[系統就緒] 請填寫左側資料並點擊「生成逐字稿與會議資訊」...</div>
       </div>
 
       <h3>👁️ 預覽</h3>
@@ -417,11 +458,29 @@ let correctedTranscriptText = '';
 let meetingNameGlobal = '';
 let outputTranscriptChecked = false;
 
+// 兩步流程狀態
+let step1Complete = false;
+let step1Transcript = '';
+let step1MeetingInfo = {};
+
+// FFmpeg 實例（懶加載）
+let ffmpegInstance = null;
+
 const STT_CONFIGS = {
-  'gemini': {
-    endpoint: '',
-    keyLabel: '',
+  'poe-gemini-3-flash': {
+    model: 'gemini-3-flash',
+    needsKey: false
+  },
+  'poe-gemini': {
     model: 'gemini-3.1-pro',
+    needsKey: false
+  },
+  'poe-whisper': {
+    model: 'Whisper-V3-Large-T',
+    needsKey: false
+  },
+  'poe-cartesia': {
+    model: 'Cartesia-Ink-Whisper',
     needsKey: false
   }
 };
@@ -453,8 +512,11 @@ document.getElementById('model').addEventListener('change', updateModelHint);
 updateModelHint();
 
 function updateSttUI() {
-  // STT 模型欄位維持隱藏；端點與密鑰改為預設顯示，供使用者設定 Whisper 相容服務
-  document.getElementById('sttModelGroup').classList.add('hidden');
+  const provider = document.getElementById('sttProvider').value;
+  document.getElementById('flashHint').style.display = (provider === 'poe-gemini-3-flash') ? 'block' : 'none';
+  document.getElementById('geminiHint').style.display = (provider === 'poe-gemini') ? 'block' : 'none';
+  document.getElementById('sttHint').style.display = (provider === 'poe-whisper') ? 'block' : 'none';
+  document.getElementById('cartesiaHint').style.display = (provider === 'poe-cartesia') ? 'block' : 'none';
 }
 
 // 文件列表顯示
@@ -475,9 +537,6 @@ document.getElementById('audioFile').addEventListener('change', e => {
   Array.from(e.target.files).forEach(f => {
     list.innerHTML += `<div>🎵 ${f.name} (${(f.size/1024/1024).toFixed(2)} MB)</div>`;
   });
-
-  const ext = e.target.files[0]?.name.split('.').pop().toLowerCase();
-  document.getElementById('audioFormatHint').style.display = (ext === 'aac') ? 'block' : 'none';
 });
 
 document.getElementById('transcriptFile').addEventListener('change', e => {
@@ -532,8 +591,7 @@ async function extractFileContent(file) {
   return '';
 }
 
-// 語音轉文字（使用 qwen3.5-omni-plus 透過 POE 多模態）
-// 語音轉文字（使用 POE API + gemini-3.1-pro，透過 type: "file" 上傳音訊）
+// 語音轉文字（使用 POE API，支援 gemini 及 whisper 模型）
 async function transcribeAudio(file, sttConfig) {
   const apiBaseUrl = document.getElementById('apiBaseUrl').value.trim().replace(/\/+$/, '');
   const apiKey = document.getElementById('apiKey').value.trim();
@@ -541,7 +599,56 @@ async function transcribeAudio(file, sttConfig) {
 
   if (!apiKey) throw new Error('請輸入 POE API Key');
 
-  // 將音訊檔轉為 base64
+  log('🎙️ 開始 POE 雲端語音轉文字（' + model + '）...', 'step');
+  setProgress(10);
+
+  const isWhisper = sttConfig.provider === 'poe-whisper';
+
+  let response;
+  const maxRetries = 3;
+
+  if (isWhisper) {
+    // Whisper 模型使用 OpenAI 相容的 /audio/transcriptions 端點 (multipart/form-data)
+    log('  📤 上傳音訊檔至 POE /audio/transcriptions ...', 'info');
+    setProgress(15);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('model', model);
+      response = await fetch(`${apiBaseUrl}/audio/transcriptions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + apiKey
+        },
+        body: formData
+      });
+
+      if (response.status === 429 && attempt < maxRetries) {
+        const wait = attempt * 8;
+        log(`⏳ STT API 速率限制 (429)，${wait} 秒後自動重試 (第 ${attempt}/${maxRetries} 次)...`, 'thinking');
+        await new Promise(r => setTimeout(r, wait * 1000));
+        continue;
+      }
+      break;
+    }
+
+    if (!response.ok) {
+      const err = await response.text();
+      if (response.status === 403 && err.includes('Audio API is not enabled')) {
+        throw new Error(`STT API 錯誤 ${response.status}: 您的 POE 帳戶未啟用 Audio API 權限，無法使用 Whisper 模型。\n\n建議：請在左側選擇「POE gemini-3.1-pro」進行語音轉文字，或聯絡 POE 客服啟用 Audio API。`);
+      }
+      throw new Error(`STT API 錯誤 ${response.status}: ${err}`);
+    }
+
+    const result = await response.json();
+    const text = result.text || '';
+    log(`✓ POE 語音轉文字完成，共 ${text.length} 字符`, 'success');
+    setProgress(45);
+    return text;
+  }
+
+  // 其他模型（如 Gemini）使用 chat completions + base64 file 方式
   const buffer = await file.arrayBuffer();
   const mimeType = file.type || 'audio/mp4';
   const base64 = btoa(
@@ -549,14 +656,15 @@ async function transcribeAudio(file, sttConfig) {
   );
   const dataUri = `data:${mimeType};base64,${base64}`;
 
+  log('  📤 上傳音訊檔至 POE...', 'info');
+  setProgress(15);
+
   const systemPrompt = `你是一個專業的語音轉文字助手。請將提供的音訊內容轉錄為繁體中文文字。
 注意：
 - 會議可能包含廣東話、普通話及英語混合
 - 請完整轉錄所有聽到的內容
 - 不要加入任何解釋或摘要，只輸出轉錄文字`;
 
-  const maxRetries = 3;
-  let response;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     response = await fetch(`${apiBaseUrl}/chat/completions`, {
       method: 'POST',
@@ -599,7 +707,11 @@ async function transcribeAudio(file, sttConfig) {
   }
 
   const result = await response.json();
-  return result.choices?.[0]?.message?.content || '';
+  const msg = result.choices?.[0]?.message || {};
+  const text = msg.content || msg.reasoning_content || '';
+  log(`✓ POE 雲端語音轉文字完成，共 ${text.length} 字符`, 'success');
+  setProgress(45);
+  return text;
 }
 
 // AI 校正逐字稿
@@ -712,17 +824,13 @@ async function streamGenerateMinutes(prompt, apiBaseUrl, apiKey, model) {
   return fullContent;
 }
 
-async function generateMinutes() {
+// ==== 步驟 1：生成逐字稿與會議基本資訊 ====
+async function generateStep1() {
   const apiBaseUrl = document.getElementById('apiBaseUrl').value.trim().replace(/\/+$/, '');
   const apiKey = document.getElementById('apiKey').value.trim();
   const model = document.getElementById('model').value;
   const sttProvider = document.getElementById('sttProvider').value;
-  const sttConfig = {
-    provider: sttProvider,
-    endpoint: document.getElementById('sttEndpoint').value.trim().replace(/\/+$/, ''),
-    apiKey: document.getElementById('sttApiKey').value.trim(),
-    model: document.getElementById('sttModel').value
-  };
+  const sttConfig = STT_CONFIGS[sttProvider] || STT_CONFIGS['poe-gemini'];
   const meetingName = document.getElementById('meetingName').value.trim();
   const meetingDatetime = document.getElementById('meetingDatetime').value;
   const meetingLocation = document.getElementById('meetingLocation').value.trim();
@@ -738,32 +846,27 @@ async function generateMinutes() {
 
   const audioFile = document.getElementById('audioFile').files[0];
   const transcriptFile = document.getElementById('transcriptFile').files[0];
-  // 使用 POE API，不需要獨立的 STT API Key
-  if (!audioFile && !transcriptFile) {
-    // 允許不上傳錄音或逐字稿，只按議程生成框架
-  }
 
   const btn = document.getElementById('generateBtn');
   btn.disabled = true;
-  btn.textContent = '⏳ 生成中...';
+  btn.textContent = '⏳ 處理中...';
   document.getElementById('progressArea').innerHTML = '';
-  document.getElementById('previewArea').innerHTML = '<div style="color:#999;text-align:center;padding:40px;">生成中，請稍候...</div>';
+  document.getElementById('previewArea').innerHTML = '<div style="color:#999;text-align:center;padding:40px;">處理中，請稍候...</div>';
   document.getElementById('downloadButtons').style.display = 'none';
   document.getElementById('downloadTranscriptBtn').style.display = 'none';
-  generatedMinutesHtml = '';
-  generatedTranscriptHtml = '';
+  document.getElementById('stepIndicator').style.display = 'none';
+  document.getElementById('step2Section').style.display = 'none';
+  step1Complete = false;
   correctedTranscriptText = '';
 
   try {
-    log('開始處理會議紀錄請求...', 'step');
+    log('━━━━━━━━━━━━━━━━━━━━━━━', 'step');
+    log('📋 步驟 1：生成逐字稿與會議基本資訊', 'step');
+    log('━━━━━━━━━━━━━━━━━━━━━━━', 'step');
+
     const modelHint = getModelHint(model);
-    log('文字模型提醒：' + modelHint.text, modelHint.warning ? 'thinking' : 'info');
-    if (transcriptFile) {
-      log('使用已上傳逐字稿生成會議紀錄', 'info');
-    } else if (audioFile && sttProvider !== 'none') {
-      log(`語音服務：${sttProvider} / ${sttConfig.model}`, 'info');
-    }
-    setProgress(5);
+    log('文字模型：' + modelHint.text, modelHint.warning ? 'thinking' : 'info');
+    setProgress(1);
 
     // 讀取參考文件
     let refContent = '';
@@ -771,13 +874,252 @@ async function generateMinutes() {
     if (refFiles.length > 0) {
       log(`📚 正在讀取 ${refFiles.length} 份議程及參考資料...`, 'step');
       for (const f of refFiles) {
-        log(`  · 解析 ${f.name}`, 'info');
+        log(`  · 解析 ${f.name}...`, 'info');
         const txt = await extractFileContent(f);
         refContent += `\n\n=== ${f.name} ===\n${txt.substring(0, 8000)}`;
       }
       log('✓ 參考資料讀取完成', 'success');
     }
-    setProgress(15);
+    setProgress(5);
+
+    // 讀取格式參考（步驟1暫時不用，留給步驟2）
+    log('📄 格式參考檔案將於步驟 2 使用', 'info');
+    setProgress(8);
+
+    // 處理逐字稿
+    let rawTranscript = '';
+    correctedTranscriptText = '';
+
+    if (transcriptFile) {
+      log(`📄 讀取已上傳逐字稿：${transcriptFile.name}...`, 'step');
+      const transcriptText = await extractFileContent(transcriptFile);
+      correctedTranscriptText = transcriptText.substring(0, 20000);
+      log(`✓ 逐字稿讀取完成，共 ${correctedTranscriptText.length} 字符`, 'success');
+      setProgress(35);
+    } else if (audioFile) {
+      log(`🎙️ 開始語音轉文字：${audioFile.name}...`, 'step');
+      if (audioFile.size > 25 * 1024 * 1024) {
+        log('⚠️ 錄音檔案超過 25MB，處理可能較慢，請耐心等候...', 'thinking');
+      }
+
+      rawTranscript = await transcribeAudio(audioFile, sttConfig);
+
+      log(`✓ 語音轉文字完成，共 ${rawTranscript.length} 字符`, 'success');
+      setProgress(35);
+
+      log('🧠 正在使用 AI 校正逐字稿...', 'step');
+      correctedTranscriptText = await correctTranscript(rawTranscript, apiBaseUrl, apiKey, model);
+      log(`✓ 逐字稿校正完成，共 ${correctedTranscriptText.length} 字符`, 'success');
+      setProgress(50);
+    } else {
+      log('ℹ️ 未上傳錄音或逐字稿，將只根據議程生成框架', 'thinking');
+      setProgress(35);
+    }
+
+    // Step 1.5: AI 綜合所有資料，提取會議資訊 + 生成逐字紀錄
+    log('━━━━━━━━━━━━━━━━━━━━━━━', 'step');
+    log('🧠 AI 正在綜合所有文件，提取會議資訊與逐字紀錄...', 'step');
+    log('━━━━━━━━━━━━━━━━━━━━━━━', 'step');
+    setProgress(55);
+
+    const dateStr = meetingDatetime ? new Date(meetingDatetime).toLocaleString('zh-HK') : '';
+
+    const step1SystemPrompt = `你是一位專業的會議助理，負責整理會議資料。請根據提供的所有材料，完成以下任務：
+
+1. 從議程、參考文件及錄音內容中，提取或推斷準確的會議基本資訊
+2. 綜合所有來源（議程、參考資料、錄音逐字稿），生成一份完整、連貫的逐字紀錄
+3. 如果議程中有議程項目，請在逐字紀錄中適當標註各議項對應的內容段落
+
+輸出格式必須嚴格如下（方便程式解析）：
+
+===MEETING_INFO===
+會議名稱：[名稱]
+日期時間：[日期時間]
+地點：[地點]
+主席：[主席]
+出席者：[出席者名單]
+===END_MEETING_INFO===
+
+===VERBATIM_TRANSCRIPT===
+[完整的逐字紀錄內容，包含所有討論要點，按議程項目分段]
+===END_VERBATIM_TRANSCRIPT===
+
+注意：
+- 如果某些資訊無法從文件中提取，請填入「（待確認）」
+- 逐字紀錄應盡可能完整，保留重要討論細節
+- 使用繁體中文`;
+
+    const step1UserPrompt = `【使用者提供的基本資訊】
+會議名稱：${meetingName}
+日期時間：${dateStr || '（未指定）'}
+地點：${meetingLocation || '（未指定）'}
+主席：${meetingChair || '（未指定）'}
+出席者：${meetingAttendees || '（未指定）'}
+具體要求：${requirements || '無'}
+
+${refContent ? '【本次會議議程及參考資料】' + refContent : '【本次會議議程及參考資料】（未提供）'}
+
+${correctedTranscriptText ? '【會議錄音逐字稿（經 AI 校正）】\n' + correctedTranscriptText.substring(0, 20000) : '【會議錄音逐字稿】（未提供）'}
+
+請輸出上述指定格式的會議資訊與逐字紀錄。`;
+
+    log('🌐 連接 POE API (' + model + ')...', 'info');
+    setProgress(60);
+
+    const step1Response = await fetchWithRetry(`${apiBaseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + apiKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          {role: 'system', content: step1SystemPrompt},
+          {role: 'user', content: step1UserPrompt}
+        ],
+        stream: false
+      })
+    });
+
+    if (!step1Response.ok) {
+      const err = await step1Response.text();
+      throw new Error(`Step 1 API 錯誤 ${step1Response.status}: ${err}`);
+    }
+
+    const step1Result = await step1Response.json();
+    const step1Text = step1Result.choices?.[0]?.message?.content || '';
+    log(`✓ AI 綜合完成，共 ${step1Text.length} 字`, 'success');
+    setProgress(85);
+
+    // 解析 AI 輸出
+    const infoMatch = step1Text.match(/===MEETING_INFO===([\s\S]*?)===END_MEETING_INFO===/);
+    const transcriptMatch = step1Text.match(/===VERBATIM_TRANSCRIPT===([\s\S]*?)===END_VERBATIM_TRANSCRIPT===/);
+
+    const infoText = infoMatch ? infoMatch[1].trim() : '';
+    const verbatimTranscript = transcriptMatch ? transcriptMatch[1].trim() : step1Text;
+
+    // 解析會議資訊
+    const parseInfo = (text, key) => {
+      const match = text.match(new RegExp(key + '[:：]\s*(.*)', 'i'));
+      return match ? match[1].trim() : '';
+    };
+
+    step1MeetingInfo = {
+      name: parseInfo(infoText, '會議名稱') || meetingName,
+      datetime: parseInfo(infoText, '日期時間') || dateStr,
+      location: parseInfo(infoText, '地點') || meetingLocation,
+      chair: parseInfo(infoText, '主席') || meetingChair,
+      attendees: parseInfo(infoText, '出席者') || meetingAttendees
+    };
+    step1Transcript = verbatimTranscript;
+
+    // 填入可編輯區域
+    document.getElementById('editMeetingName').value = step1MeetingInfo.name;
+    document.getElementById('editMeetingLocation').value = step1MeetingInfo.location;
+    document.getElementById('editMeetingChair').value = step1MeetingInfo.chair;
+    document.getElementById('editMeetingAttendees').value = step1MeetingInfo.attendees;
+
+    // 嘗試解析日期時間並填入 datetime-local
+    try {
+      if (step1MeetingInfo.datetime && step1MeetingInfo.datetime !== '（未指定）' && step1MeetingInfo.datetime !== '（待確認）') {
+        const d = new Date(step1MeetingInfo.datetime.replace(/年|月|日/g, '/').replace(/上午|下午|晚上|凌晨/g, ''));
+        if (!isNaN(d.getTime())) {
+          const isoStr = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+          document.getElementById('editMeetingDatetime').value = isoStr;
+        }
+      }
+    } catch(e) {}
+
+    document.getElementById('editTranscript').value = step1Transcript;
+    document.getElementById('transcriptCharCount').textContent = `(${step1Transcript.length} 字符)`;
+
+    // 顯示步驟 2 區域
+    document.getElementById('step2Section').style.display = 'block';
+    document.getElementById('stepIndicator').style.display = 'block';
+    document.getElementById('step1Badge').style.background = '#2a5298';
+    document.getElementById('step2Badge').style.background = '#ddd';
+    step1Complete = true;
+
+    // 預覽區顯示逐字稿
+    const preview = document.getElementById('previewArea');
+    preview.innerHTML = `<div style="padding:16px;font-size:13px;line-height:1.8;">
+      <h3 style="color:#2a5298;margin-bottom:12px;">📋 步驟 1 完成：會議資訊與逐字稿</h3>
+      <div style="background:#f0f4ff;padding:12px;border-radius:8px;margin-bottom:12px;">
+        <strong>會議名稱：</strong>${escapeHtml(step1MeetingInfo.name)}<br>
+        <strong>日期時間：</strong>${escapeHtml(step1MeetingInfo.datetime)}<br>
+        <strong>地點：</strong>${escapeHtml(step1MeetingInfo.location)}<br>
+        <strong>主席：</strong>${escapeHtml(step1MeetingInfo.chair)}<br>
+        <strong>出席者：</strong>${escapeHtml(step1MeetingInfo.attendees)}<br>
+      </div>
+      <p style="color:#666;">請於左側「步驟 2」區域檢查並編輯會議資訊與逐字稿，確認無誤後再點擊「生成正式會議紀錄」。</p>
+    </div>`;
+
+    log('━━━━━━━━━━━━━━━━━━━━━━━', 'step');
+    log('✅ 步驟 1 完成！請於左側檢查並編輯會議資訊與逐字稿', 'success');
+    log('━━━━━━━━━━━━━━━━━━━━━━━', 'step');
+    setProgress(100);
+
+    // 平滑滾動到步驟 2
+    setTimeout(() => {
+      document.getElementById('step2Section').scrollIntoView({ behavior: 'smooth' });
+    }, 300);
+
+  } catch (err) {
+    log('❌ 錯誤: ' + err.message, 'error');
+    console.error(err);
+    document.getElementById('previewArea').innerHTML = `<div style="color:#c41e3a;text-align:center;padding:40px;">生成失敗：${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📋 重新生成逐字稿與會議資訊';
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ==== 步驟 2：生成正式會議紀錄 ====
+async function generateStep2() {
+  if (!step1Complete) {
+    alert('請先完成步驟 1');
+    return;
+  }
+
+  const apiBaseUrl = document.getElementById('apiBaseUrl').value.trim().replace(/\/+$/, '');
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const model = document.getElementById('model').value;
+
+  const meetingName = document.getElementById('editMeetingName').value.trim();
+  const meetingDatetime = document.getElementById('editMeetingDatetime').value;
+  const meetingLocation = document.getElementById('editMeetingLocation').value.trim();
+  const meetingChair = document.getElementById('editMeetingChair').value.trim();
+  const meetingAttendees = document.getElementById('editMeetingAttendees').value.trim();
+  const editedTranscript = document.getElementById('editTranscript').value.trim();
+  const requirements = document.getElementById('requirements').value.trim();
+
+  meetingNameGlobal = meetingName || '會議紀錄';
+
+  if (!apiBaseUrl) { alert('請輸入 POE API Endpoint'); return; }
+  if (!apiKey) { alert('請輸入 POE API Key'); return; }
+  if (!meetingName) { alert('請輸入會議名稱'); return; }
+
+  const btn = document.getElementById('generateMinutesBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 生成正式會議紀錄中...';
+  document.getElementById('progressArea').innerHTML = '';
+  document.getElementById('downloadButtons').style.display = 'none';
+  generatedMinutesHtml = '';
+
+  try {
+    log('━━━━━━━━━━━━━━━━━━━━━━━', 'step');
+    log('📝 步驟 2：生成正式會議紀錄', 'step');
+    log('━━━━━━━━━━━━━━━━━━━━━━━', 'step');
+    setProgress(5);
+
+    const dateStr = meetingDatetime ? new Date(meetingDatetime).toLocaleString('zh-HK') : '';
 
     // 讀取格式參考
     let formatContent = '';
@@ -791,62 +1133,21 @@ async function generateMinutes() {
       }
       log('✓ 格式參考讀取完成', 'success');
     }
-    setProgress(25);
-
-    // 處理逐字稿：優先使用上傳的逐字稿，否則進行語音轉文字
-    let rawTranscript = '';
-    correctedTranscriptText = '';
-
-    if (transcriptFile) {
-      log(`📄 讀取已上傳逐字稿：${transcriptFile.name}...`, 'step');
-      const transcriptText = await extractFileContent(transcriptFile);
-      correctedTranscriptText = transcriptText.substring(0, 20000);
-      log(`✓ 逐字稿讀取完成，共 ${correctedTranscriptText.length} 字符`, 'success');
-      setProgress(55);
-
-      if (outputTranscriptChecked) {
-        generatedTranscriptHtml = buildTranscriptHtml(meetingName, meetingDatetime, correctedTranscriptText);
-        log('✓ 已準備逐字稿輸出', 'success');
-      }
-    } else if (audioFile) {
-      log(`🎙️ 開始語音轉文字：${audioFile.name}（使用 qwen3.5-omni-plus 透過 POE）...`, 'step');
-      if (audioFile.size > 25 * 1024 * 1024) {
-        log('⚠️ 錄音檔案超過 25MB，處理可能較慢，請耐心等候...', 'thinking');
-      }
-      rawTranscript = await transcribeAudio(audioFile, sttConfig);
-      log(`✓ 語音轉文字完成，共 ${rawTranscript.length} 字符`, 'success');
-      setProgress(40);
-
-      log('🧠 正在使用 AI 校正逐字稿...', 'step');
-      correctedTranscriptText = await correctTranscript(rawTranscript, apiBaseUrl, apiKey, model);
-      log(`✓ 逐字稿校正完成，共 ${correctedTranscriptText.length} 字符`, 'success');
-      setProgress(55);
-
-      if (outputTranscriptChecked) {
-        generatedTranscriptHtml = buildTranscriptHtml(meetingName, meetingDatetime, correctedTranscriptText);
-        log('✓ 已準備逐字稿輸出', 'success');
-      }
-    } else {
-      log('ℹ️ 未上傳錄音或逐字稿，將只根據議程及要求生成會議紀錄框架', 'thinking');
-      setProgress(55);
-    }
-
-    // 生成會議紀錄
-    const dateStr = meetingDatetime ? new Date(meetingDatetime).toLocaleString('zh-HK') : '';
+    setProgress(15);
 
     const systemPrompt = `你是香港教育工作者聯會黃楚標中學的資深行政助理，專責撰寫正式會議紀錄。請根據提供的資料生成結構清晰、語氣得體、適合存檔的會議紀錄。
 
 要求：
 1. 使用繁體中文，語氣正式、客觀
 2. 會議紀錄應包含：會議名稱、日期時間、地點、主席、出席者、議程項目、討論內容摘要、議決/共識、行動項目（Action Items）、下次會議安排
-3. 如果有錄音逐字稿，請根據內容歸納重點，不要逐句抄錄；如果沒有錄音，請根據議程及要求生成合適的紀錄框架
-4. 保留過往會議紀錄的格式風格（如有上傳格式參考）
+3. 根據提供的逐字稿歸納重點，不要逐句抄錄；如果沒有逐字稿，請根據議程及要求生成合適的紀錄框架
+4. 參考過往會議紀錄的格式風格（如有上傳格式參考），保持一致的排版和用語
 5. 行動項目需以表格呈現，包含：事項、負責人、完成期限
 6. 輸出格式為純 HTML（包含適當 <style> 美化），不要使用 markdown
 7. HTML 應包含學校名稱、標題、會議資料區、議程區、討論摘要區、行動事項區
 8. 使用適合列印的版面（A4，正體字）`;
 
-    const userPrompt = `請為以下會議生成會議紀錄：
+    const userPrompt = `請為以下會議生成正式會議紀錄：
 
 【會議名稱】${meetingName}
 【日期時間】${dateStr || '（未指定）'}
@@ -855,15 +1156,15 @@ async function generateMinutes() {
 【出席者】${meetingAttendees || '（未指定）'}
 【具體要求】${requirements || '請設計標準會議紀錄格式'}
 
-${refContent ? '【本次會議議程及參考資料】' + refContent : ''}
+${formatContent ? '【過往會議紀錄格式參考（請嚴格仿照排版風格）】' + formatContent : ''}
 
-${formatContent ? '【過往會議紀錄格式參考（請仿照排版風格）】' + formatContent : ''}
-
-${correctedTranscriptText ? '【會議錄音逐字稿（經 AI 校正）】\n' + correctedTranscriptText.substring(0, 20000) : ''}
+【會議逐字紀錄（經人工編輯確認）】
+${editedTranscript ? editedTranscript.substring(0, 25000) : '（未提供逐字稿，請根據議程及要求生成紀錄框架）'}
 
 請輸出完整的 HTML 文件（從 <!DOCTYPE html> 到 </html>），包含完整會議紀錄內容。`;
 
-    log('🧠 連接 POE API (' + model + ') 生成會議紀錄...', 'step');
+    log('🧠 連接 POE API (' + model + ') 生成正式會議紀錄...', 'step');
+    setProgress(30);
 
     const fullContent = await streamGenerateMinutes(
       {system: systemPrompt, user: userPrompt},
@@ -871,7 +1172,7 @@ ${correctedTranscriptText ? '【會議錄音逐字稿（經 AI 校正）】\n' +
     );
 
     log(`✓ 生成完成，共 ${fullContent.length} 字`, 'success');
-    setProgress(95);
+    setProgress(90);
 
     // 提取 HTML
     let htmlMatch = fullContent.match(/```html\s*([\s\S]*?)```/);
@@ -892,13 +1193,19 @@ ${correctedTranscriptText ? '【會議錄音逐字稿（經 AI 校正）】\n' +
     iframe.contentDocument.write(htmlContent);
     iframe.contentDocument.close();
 
-    log('✅ 會議紀錄完成！可下載 DOCX 文件', 'success');
+    log('━━━━━━━━━━━━━━━━━━━━━━━', 'step');
+    log('✅ 正式會議紀錄完成！可下載 DOCX 文件', 'success');
+    log('━━━━━━━━━━━━━━━━━━━━━━━', 'step');
     setProgress(100);
 
     document.getElementById('downloadButtons').style.display = 'flex';
-    if (outputTranscriptChecked && correctedTranscriptText) {
+    if (outputTranscriptChecked) {
       document.getElementById('downloadTranscriptBtn').style.display = 'block';
     }
+
+    // 更新步驟指示器
+    document.getElementById('step1Badge').style.background = '#2a5298';
+    document.getElementById('step2Badge').style.background = '#2a5298';
 
   } catch (err) {
     log('❌ 錯誤: ' + err.message, 'error');
@@ -906,7 +1213,7 @@ ${correctedTranscriptText ? '【會議錄音逐字稿（經 AI 校正）】\n' +
     document.getElementById('previewArea').innerHTML = `<div style="color:#c41e3a;text-align:center;padding:40px;">生成失敗：${err.message}</div>`;
   } finally {
     btn.disabled = false;
-    btn.textContent = '🚀 開始生成會議紀錄';
+    btn.textContent = '📝 生成正式會議紀錄';
   }
 }
 
@@ -948,9 +1255,13 @@ function downloadMinutes() {
 }
 
 function downloadTranscript() {
-  if (!generatedTranscriptHtml) return;
+  const editedTranscript = document.getElementById('editTranscript')?.value?.trim();
+  const transcriptToUse = editedTranscript || step1Transcript || '';
+  if (!transcriptToUse) return;
+  const editDatetime = document.getElementById('editMeetingDatetime')?.value;
+  const html = buildTranscriptHtml(meetingNameGlobal, editDatetime, transcriptToUse);
   const filename = sanitizeFilename(`${meetingNameGlobal}_逐字稿_AI校正`);
-  downloadDocx(filename, generatedTranscriptHtml, '逐字稿');
+  downloadDocx(filename, html, '逐字稿');
 }
 
 function sanitizeFilename(name) {
@@ -1122,9 +1433,9 @@ function getDocxDocumentRelsXml() {
 </Relationships>`;
 }
 
-// 初始化 STT UI
-updateSttUI();
-updateModelHint();
+let whisperWebReady = false;
+let whisperWebLoading = false;
+let whisperTranscriber = null;
 </script>
 
 </body>
