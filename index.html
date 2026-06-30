@@ -191,19 +191,30 @@
       <h3>⚙️ 生成設定</h3>
 
       <div class="form-group">
-        <label>選擇 AI 模型</label>
+        <label>POE API Endpoint</label>
+        <input type="text" id="apiBaseUrl" value="https://api.poe.com/v1" placeholder="輸入 POE API Endpoint">
+      </div>
+
+      <div class="form-group">
+        <label>POE API Key</label>
+        <input type="password" id="apiKey" value="sk-poe-9_d97DWxeyG1pnXThengNH67JKjfwaJ5ZYJbTjN_SQY" placeholder="輸入您的 POE API Key" autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label>選擇生成會議紀錄的 AI 模型</label>
         <select id="model">
-          <option value="mistral-medium-latest" selected>mistral-medium-latest（Mistral · 免費頂級）</option>
-          <option value="gemini-3.5-flash">gemini-3.5-flash（Google Gemini · POE）</option>
-          <option value="qwen3.6-plus">qwen3.6-plus（Qwen）</option>
+          <option value="gemini-3.1-pro" selected>gemini-3.1-pro（Google Gemini 3.1 Pro）</option>
         </select>
         <div id="modelHint" class="model-hint"></div>
       </div>
 
       <div class="form-group">
         <label>🎙️ 語音轉文字（Speech-to-Text）服務 - Mistral Voxtral</label>
+        <input type="text" id="mistralApiBaseUrl" value="https://api.mistral.ai" placeholder="Mistral API Endpoint" style="margin-bottom:8px;">
+        <input type="password" id="mistralApiKey" value="2N8zh5qJ255SL4GgFhsg1vrENXlJFb9d" placeholder="Mistral API Key" autocomplete="off" style="margin-bottom:8px;">
+        <input type="text" id="sttModel" value="voxtral-mini-latest" placeholder="STT 模型名稱" style="margin-bottom:8px;">
         <div class="model-hint">
-          ⚡ 使用 Mistral <strong>voxtral-mini-latest</strong> 進行語音轉文字。支援廣東話、普通話、英語等多語言混合辨識，1 小時錄音約需 <strong>2-3 分鐘</strong>處理。
+          ⚡ 使用 Mistral <strong>voxtral-mini-latest</strong> 進行語音轉文字。支援廣東話、普通話、英語等多語言混合辨識，1 小時錄音約需 <strong>2-3 分鐘</strong>處理。錄音以 multipart/form-data 上傳至 <code>/v1/audio/transcriptions</code> 端點。
         </div>
       </div>
 
@@ -353,14 +364,81 @@
   </div>
 </div>
 
-<script>
-// === 固定連線設定（不在 UI 顯示） ===
-const POE_API_BASE_URL = 'https://api.poe.com/v1';
-const POE_API_KEY = 'sk-poe-9_d97DWxeyG1pnXThengNH67JKjfwaJ5ZYJbTjN_SQY';
-const MISTRAL_API_BASE_URL = 'https://api.mistral.ai';
-const MISTRAL_API_KEY = '2N8zh5qJ255SL4GgFhsg1vrENXlJFb9d';
-const STT_MODEL = 'voxtral-mini-latest';
+<!-- Poe Token 餘額小角落 -->
+<div class="poe-token-widget" id="poeTokenWidget" title="點擊重新查詢 Poe Token 餘額">
+  <div class="pt-title">⚡ POE TOKEN</div>
+  <div class="pt-body">
+    <div class="pt-value" id="poeTokenValue">查詢中...</div>
+    <div class="pt-sub" id="poeTokenSub">GET /usage/current_balance</div>
+    <div class="pt-error" id="poeTokenErr" style="display:none;"></div>
+  </div>
+</div>
 
+<script>
+// === Poe Token 餘額查詢 ===
+async function fetchPoeTokenBalance() {
+  const apiKey = (document.getElementById('apiKey').value || '').trim();
+  const valEl = document.getElementById('poeTokenValue');
+  const subEl = document.getElementById('poeTokenSub');
+  const errEl = document.getElementById('poeTokenErr');
+
+  if (!apiKey) {
+    valEl.textContent = '未設定 API Key';
+    subEl.textContent = '請先於左側填寫 Poe API Key';
+    errEl.style.display = 'none';
+    return;
+  }
+
+  valEl.textContent = '查詢中... points';
+  subEl.textContent = 'GET /usage/current_balance';
+  errEl.style.display = 'none';
+
+  try {
+    const resp = await fetch('https://api.poe.com/usage/current_balance', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + apiKey }
+    });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => '');
+      throw new Error('HTTP ' + resp.status + (txt ? ' - ' + txt.slice(0, 120) : ''));
+    }
+    const data = await resp.json();
+    let balance = null;
+    if (typeof data === 'object' && data !== null) {
+      const candidates = ['current_point_balance', 'current_balance', 'balance', 'remaining', 'tokens', 'credit', 'points'];
+      for (const k of candidates) {
+        if (k in data && typeof data[k] !== 'object') { balance = data[k]; break; }
+      }
+    } else if (typeof data === 'number') {
+      balance = data;
+    }
+    if (balance === null || balance === undefined) {
+      balance = '(未知欄位) ' + JSON.stringify(data).slice(0, 80);
+    }
+    let display, usdText = '';
+    if (typeof balance === 'number') {
+      display = balance.toLocaleString('en-US', {maximumFractionDigits: 2}) + ' pts';
+      const usd = balance * 30 / 1_000_000;
+      usdText = ' ≈ $' + usd.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    } else {
+      display = String(balance);
+    }
+    valEl.textContent = display + usdText;
+    const ts = new Date().toLocaleTimeString('zh-HK');
+    subEl.textContent = '更新：' + ts + ' · 1M pts = $30';
+  } catch (err) {
+    valEl.textContent = '查詢失敗';
+    errEl.style.display = 'block';
+    errEl.textContent = err.message;
+    subEl.textContent = '可點擊此卡片重試';
+  }
+}
+
+document.getElementById('poeTokenWidget').addEventListener('click', fetchPoeTokenBalance);
+window.addEventListener('load', () => setTimeout(fetchPoeTokenBalance, 600));
+</script>
+
+<script>
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 let generatedMinutesHtml = '';
@@ -373,31 +451,15 @@ const STT_CONFIGS = {
 };
 
 const MODEL_HINTS = {
-  'mistral-medium-latest': {
-    text: 'mistral-medium-latest：Mistral 免費頂級模型，將直接呼叫 Mistral API。生成會議紀錄與文件分析皆宜。如遇 429 錯誤請稍後重試。',
-    warning: false
-  },
-  'gemini-3.5-flash': {
-    text: 'gemini-3.5-flash：Google Gemini 快速模型，透過 POE API 調用。適合長文件與參考資料分析。',
-    warning: false
-  },
-  'qwen3.6-plus': {
-    text: 'qwen3.6-plus：Qwen 強化模型，透過 POE API 調用。適合需要深入推理的會議紀錄整理。',
+  'gemini-3.1-pro': {
+    text: 'gemini-3.1-pro：Google Gemini 3.1 Pro，透過 POE API 調用。支援多模態輸入，適合會議紀錄生成與語音轉文字。如遇 429 錯誤請稍後重試。',
     warning: false
   }
 };
 
 function getModelHint(model) {
   const modelKey = Object.keys(MODEL_HINTS).find(key => model.toLowerCase().includes(key));
-  return MODEL_HINTS[modelKey] || { text: '透過 POE API 調用。如遇 429 錯誤請稍後重試。', warning: false };
-}
-
-function getApiConfig(model) {
-  const name = (model || '').toLowerCase();
-  if (name.startsWith('mistral-')) {
-    return { baseUrl: MISTRAL_API_BASE_URL, apiKey: MISTRAL_API_KEY };
-  }
-  return { baseUrl: POE_API_BASE_URL, apiKey: POE_API_KEY };
+  return MODEL_HINTS[modelKey] || { text: '免費模型可能有速率限制，如遇 429 錯誤請稍後重試。', warning: false };
 }
 
 function updateModelHint() {
@@ -575,7 +637,11 @@ async function autoFillMeetingInfo() {
   const agendaFiles = document.getElementById('agendaFiles').files;
   if (agendaFiles.length === 0) { alert('請先上傳會議議程檔案'); return; }
 
+  const apiBaseUrl = document.getElementById('apiBaseUrl').value.trim().replace(/\/+$/, '');
+  const apiKey = document.getElementById('apiKey').value.trim();
   const model = document.getElementById('model').value;
+
+  if (!apiKey) { alert('請輸入 POE API Key'); return; }
 
   const btn = document.getElementById('autoFillBtn');
   btn.disabled = true;
@@ -625,10 +691,7 @@ async function autoFillMeetingInfo() {
 
     log('🧠 AI 正在分析議程圖片，提取會議基本資料...', 'step');
 
-    const { baseUrl, apiKey } = getApiConfig(model);
-    log('🌐 使用 ' + (model.startsWith('mistral-') ? 'Mistral' : 'POE') + ' API...', 'info');
-
-    const response = await fetchWithRetry(`${baseUrl}/chat/completions`, {
+    const response = await fetchWithRetry(`${apiBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + apiKey,
@@ -686,7 +749,11 @@ async function autoFillMeetingInfo() {
 
 // 語音轉文字（Mistral Voxtral）
 async function transcribeAudio(file, sttConfig) {
-  const model = sttConfig.model || STT_MODEL;
+  const mistralBaseUrl = document.getElementById('mistralApiBaseUrl').value.trim().replace(/\/+$/, '');
+  const mistralApiKey = document.getElementById('mistralApiKey').value.trim();
+  const model = sttConfig.model || document.getElementById('sttModel').value.trim() || 'voxtral-mini-latest';
+
+  if (!mistralApiKey) throw new Error('請輸入 Mistral API Key');
 
   log('🎙️ 開始 Mistral Voxtral 雲端語音轉文字（' + model + '）...', 'step');
   setProgress(10);
@@ -701,9 +768,9 @@ async function transcribeAudio(file, sttConfig) {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('model', model);
-    response = await fetch(`${MISTRAL_API_BASE_URL}/v1/audio/transcriptions`, {
+    response = await fetch(`${mistralBaseUrl}/v1/audio/transcriptions`, {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + MISTRAL_API_KEY },
+      headers: { 'Authorization': 'Bearer ' + mistralApiKey },
       body: formData
     });
 
@@ -800,9 +867,8 @@ function buildAnnotatedTranscript() {
 }
 
 // 串流生成
-async function streamGenerate(system, user, model) {
-  const { baseUrl, apiKey } = getApiConfig(model);
-  const response = await fetchWithRetry(`${baseUrl}/chat/completions`, {
+async function streamGenerate(system, user, apiBaseUrl, apiKey, model) {
+  const response = await fetchWithRetry(`${apiBaseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Authorization': 'Bearer ' + apiKey,
@@ -861,13 +927,17 @@ async function streamGenerate(system, user, model) {
 
 // ==== 步驟 1：生成分段逐字稿 ====
 async function generateStep1() {
+  const apiBaseUrl = document.getElementById('apiBaseUrl').value.trim().replace(/\/+$/, '');
+  const apiKey = document.getElementById('apiKey').value.trim();
   const model = document.getElementById('model').value;
-  const sttConfig = { model: STT_MODEL };
+  const sttConfig = { model: document.getElementById('sttModel').value.trim() || 'voxtral-mini-latest' };
   const meetingName = document.getElementById('meetingName').value.trim();
   const audioSource = document.querySelector('input[name="audioSource"]:checked').value;
 
   meetingNameGlobal = meetingName || '會議紀錄';
 
+  if (!apiBaseUrl) { alert('請輸入 POE API Endpoint'); return; }
+  if (!apiKey) { alert('請輸入 POE API Key'); return; }
   if (!meetingName) { alert('請輸入會議名稱'); return; }
 
   const audioFile = document.getElementById('audioFile').files[0];
@@ -958,14 +1028,13 @@ async function generateStep1() {
       { type: 'text', text: `\n\n【${audioSource === 'recording' ? '語音轉文字結果' : '逐字稿'}】\n${rawContent || '（未提供錄音或逐字稿）'}\n\n請按議程項目或討論主題整理並分段，輸出指定格式。` }
     ];
 
-    const step1Api = getApiConfig(model);
-    log('🌐 連接 ' + (model.startsWith('mistral-') ? 'Mistral' : 'POE') + ' API (' + model + ')...', 'info');
+    log('🌐 連接 POE API (' + model + ')...', 'info');
     setProgress(45);
 
-    const step1Response = await fetchWithRetry(`${step1Api.baseUrl}/chat/completions`, {
+    const step1Response = await fetchWithRetry(`${apiBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
-        'Authorization': 'Bearer ' + step1Api.apiKey,
+        'Authorization': 'Bearer ' + apiKey,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -1041,6 +1110,8 @@ async function generateStep1() {
 async function generateStep2() {
   if (!step1Complete) { alert('請先完成步驟 1'); return; }
 
+  const apiBaseUrl = document.getElementById('apiBaseUrl').value.trim().replace(/\/+$/, '');
+  const apiKey = document.getElementById('apiKey').value.trim();
   const model = document.getElementById('model').value;
 
   const meetingName = document.getElementById('meetingName').value.trim();
@@ -1053,6 +1124,8 @@ async function generateStep2() {
 
   meetingNameGlobal = meetingName || '會議紀錄';
 
+  if (!apiBaseUrl) { alert('請輸入 POE API Endpoint'); return; }
+  if (!apiKey) { alert('請輸入 POE API Key'); return; }
   if (!meetingName) { alert('請輸入會議名稱'); return; }
 
   const annotatedTranscript = buildAnnotatedTranscript();
@@ -1100,10 +1173,10 @@ async function generateStep2() {
       { type: 'text', text: `\n\n【會議逐字稿（含說話者標記，經人工確認）】\n${annotatedTranscript.substring(0, 25000)}\n\n請輸出完整 HTML 文件。` }
     ];
 
-    log('🧠 連接 ' + (model.startsWith('mistral-') ? 'Mistral' : 'POE') + ' API (' + model + ') 生成正式會議紀錄...', 'step');
+    log('🧠 連接 POE API (' + model + ') 生成正式會議紀錄...', 'step');
     setProgress(25);
 
-    const fullContent = await streamGenerate(systemPrompt, userContent, model);
+    const fullContent = await streamGenerate(systemPrompt, userContent, apiBaseUrl, apiKey, model);
 
     log(`✓ 生成完成，共 ${fullContent.length} 字`, 'success');
     setProgress(90);
