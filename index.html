@@ -209,9 +209,12 @@
       </div>
 
       <div class="form-group">
-        <label>語音轉文字（Speech-to-Text）服務</label>
+        <label>🎙️ 語音轉文字（Speech-to-Text）服務 - Mistral Voxtral</label>
+        <input type="text" id="mistralApiBaseUrl" value="https://api.mistral.ai" placeholder="Mistral API Endpoint" style="margin-bottom:8px;">
+        <input type="password" id="mistralApiKey" value="cJ13k9L8LMxEFShV7pg52mRKt5FaEUff" placeholder="Mistral API Key" autocomplete="off" style="margin-bottom:8px;">
+        <input type="text" id="sttModel" value="voxtral-mini-latest" placeholder="STT 模型名稱" style="margin-bottom:8px;">
         <div class="model-hint">
-          ⚡ 使用 POE <strong>gemini-3.5-flash</strong> 進行語音轉文字。支援廣東話及英語混合，1 小時錄音約需 <strong>10 分鐘</strong>處理。
+          ⚡ 使用 Mistral <strong>voxtral-mini-latest</strong> 進行語音轉文字。支援廣東話、普通話、英語等多語言混合辨識，1 小時錄音約需 <strong>2-3 分鐘</strong>處理。錄音以 multipart/form-data 上傳至 <code>/v1/audio/transcriptions</code> 端點。
         </div>
       </div>
 
@@ -346,7 +349,7 @@
       </div>
       <div class="progress-area" id="progressArea">
         <div class="info">[系統就緒] 請填寫左側資料並點擊「AI 整理逐字稿」...</div>
-        <div class="thinking">⏱️ 注意：使用錄音生成逐字稿時，1 小時錄音約需 10 分鐘處理，請耐心等候。</div>
+        <div class="thinking">⏱️ 注意：使用錄音生成逐字稿時（Mistral Voxtral），1 小時錄音約需 2-3 分鐘處理，請耐心等候。</div>
       </div>
 
       <h3>👁️ 預覽</h3>
@@ -444,7 +447,7 @@ let step1Complete = false;
 let parsedSpeeches = [];
 
 const STT_CONFIGS = {
-  'poe-gemini-3.5-flash': { model: 'gemini-3.5-flash' }
+  'mistral-voxtral-mini-latest': { model: 'voxtral-mini-latest' }
 };
 
 const MODEL_HINTS = {
@@ -744,90 +747,36 @@ async function autoFillMeetingInfo() {
   }
 }
 
-// 語音轉文字
+// 語音轉文字（Mistral Voxtral）
 async function transcribeAudio(file, sttConfig) {
-  const apiBaseUrl = document.getElementById('apiBaseUrl').value.trim().replace(/\/+$/, '');
-  const apiKey = document.getElementById('apiKey').value.trim();
-  const model = sttConfig.model || 'gemini-3-flash';
+  const mistralBaseUrl = document.getElementById('mistralApiBaseUrl').value.trim().replace(/\/+$/, '');
+  const mistralApiKey = document.getElementById('mistralApiKey').value.trim();
+  const model = sttConfig.model || document.getElementById('sttModel').value.trim() || 'voxtral-mini-latest';
 
-  if (!apiKey) throw new Error('請輸入 POE API Key');
+  if (!mistralApiKey) throw new Error('請輸入 Mistral API Key');
 
-  log('🎙️ 開始 POE 雲端語音轉文字（' + model + '）...', 'step');
+  log('🎙️ 開始 Mistral Voxtral 雲端語音轉文字（' + model + '）...', 'step');
   setProgress(10);
 
-  const isWhisper = model.toLowerCase().includes('whisper');
   let response;
   const maxRetries = 3;
 
-  if (isWhisper) {
-    log('  📤 上傳音訊檔至 POE /audio/transcriptions ...', 'info');
-    setProgress(15);
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('model', model);
-      response = await fetch(`${apiBaseUrl}/audio/transcriptions`, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + apiKey },
-        body: formData
-      });
-
-      if (response.status === 429 && attempt < maxRetries) {
-        const wait = attempt * 8;
-        log(`⏳ STT API 速率限制 (429)，${wait} 秒後重試...`, 'thinking');
-        await new Promise(r => setTimeout(r, wait * 1000));
-        continue;
-      }
-      break;
-    }
-
-    if (!response.ok) {
-      const err = await response.text();
-      if (response.status === 403 && err.includes('Audio API is not enabled')) {
-        throw new Error('您的 POE 帳戶未啟用 Audio API 權限，請選用 Gemini 模型進行語音轉文字。');
-      }
-      throw new Error(`STT API 錯誤 ${response.status}: ${err}`);
-    }
-
-    const result = await response.json();
-    return result.text || '';
-  }
-
-  // Gemini 系列：base64 file
-  const buffer = await file.arrayBuffer();
-  const mimeType = file.type || 'audio/mp4';
-  const base64 = btoa(new Uint8Array(buffer).reduce((d, b) => d + String.fromCharCode(b), ''));
-  const dataUri = `data:${mimeType};base64,${base64}`;
-
-  log('  📤 上傳音訊檔至 POE...', 'info');
+  log('  📤 上傳音訊檔至 Mistral /v1/audio/transcriptions ...', 'info');
   setProgress(15);
 
-  const systemPrompt = `你是一個專業的語音轉文字助手。請將提供的音訊內容轉錄為繁體中文文字。
-會議可能包含廣東話、普通話及英語混合，請完整轉錄所有內容，不要加任何解釋或摘要。`;
-
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    response = await fetch(`${apiBaseUrl}/chat/completions`, {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('model', model);
+    response = await fetch(`${mistralBaseUrl}/v1/audio/transcriptions`, {
       method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + apiKey,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'text', text: systemPrompt },
-            { type: 'file', file: { filename: file.name, file_data: dataUri } }
-          ]
-        }]
-      })
+      headers: { 'Authorization': 'Bearer ' + mistralApiKey },
+      body: formData
     });
 
     if (response.status === 429 && attempt < maxRetries) {
       const wait = attempt * 8;
-      log(`⏳ STT 速率限制，${wait} 秒後重試...`, 'thinking');
+      log(`⏳ STT API 速率限制 (429)，${wait} 秒後重試...`, 'thinking');
       await new Promise(r => setTimeout(r, wait * 1000));
       continue;
     }
@@ -836,12 +785,11 @@ async function transcribeAudio(file, sttConfig) {
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`STT API 錯誤 ${response.status}: ${err}`);
+    throw new Error(`Mistral STT API 錯誤 ${response.status}: ${err}`);
   }
 
   const result = await response.json();
-  const msg = result.choices?.[0]?.message || {};
-  return msg.content || msg.reasoning_content || '';
+  return result.text || '';
 }
 
 // 解析分段發言
@@ -982,7 +930,7 @@ async function generateStep1() {
   const apiBaseUrl = document.getElementById('apiBaseUrl').value.trim().replace(/\/+$/, '');
   const apiKey = document.getElementById('apiKey').value.trim();
   const model = document.getElementById('model').value;
-  const sttConfig = { model: 'gemini-3.5-flash' };
+  const sttConfig = { model: document.getElementById('sttModel').value.trim() || 'voxtral-mini-latest' };
   const meetingName = document.getElementById('meetingName').value.trim();
   const audioSource = document.querySelector('input[name="audioSource"]:checked').value;
 
